@@ -115,6 +115,7 @@ class _VerifikasiDaftarPendonorTabState extends State<VerifikasiDaftarPendonorTa
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     initialValue: statusAkun,
+                    isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Keputusan Status Akun'),
                     items: [
                       AppStatus.akunTerverifikasi,
@@ -127,6 +128,7 @@ class _VerifikasiDaftarPendonorTabState extends State<VerifikasiDaftarPendonorTa
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
                     initialValue: statusGoldar,
+                    isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Status Verifikasi Golongan Darah'),
                     items: [
                       AppStatus.goldarTerverifikasi,
@@ -264,23 +266,40 @@ class _VerifikasiDaftarPendonorTabState extends State<VerifikasiDaftarPendonorTa
               width: 160,
               child: DropdownButtonFormField<String>(
                 initialValue: _filterGoldar,
+                isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Gol. Darah'),
-                items: ['Semua', 'A', 'B', 'AB', 'O'].map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
+                items: ['Semua', 'A', 'B', 'AB', 'O']
+                    .map(
+                      (g) => DropdownMenuItem(
+                        value: g,
+                        child: Text(g, overflow: TextOverflow.ellipsis),
+                      ),
+                    )
+                    .toList(),
                 onChanged: (v) => setState(() => _filterGoldar = v!),
               ),
             ),
             SizedBox(
-              width: 200,
+              width: 230,
               child: DropdownButtonFormField<String>(
                 initialValue: _filterStatus,
+                isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Status Akun'),
-                items: [
-                  'Semua',
-                  AppStatus.akunTerverifikasi,
-                  AppStatus.akunMenunggu,
-                  AppStatus.akunPerluDilengkapi,
-                  AppStatus.akunDitolak,
-                ].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                items:
+                    [
+                          'Semua',
+                          AppStatus.akunTerverifikasi,
+                          AppStatus.akunMenunggu,
+                          AppStatus.akunPerluDilengkapi,
+                          AppStatus.akunDitolak,
+                        ]
+                        .map(
+                          (s) => DropdownMenuItem(
+                            value: s,
+                            child: Text(s, overflow: TextOverflow.ellipsis),
+                          ),
+                        )
+                        .toList(),
                 onChanged: (v) => setState(() => _filterStatus = v!),
               ),
             ),

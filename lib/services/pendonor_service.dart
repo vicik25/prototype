@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../core/constants/app_status.dart';
 import '../core/utils/donor_helper.dart';
 import '../main.dart';
@@ -48,8 +50,8 @@ class PendonorService {
   static Future<void> verifikasiPendaftar({
     required String idMahasiswa,
     required String adminId,
-    required String statusAkun, // Terverifikasi, Perlu dilengkapi, Ditolak
-    required String statusGoldar, // Terverifikasi, Belum terverifikasi
+    required String statusAkun,
+    required String statusGoldar,
     String? catatan,
   }) async {
     await supabase
@@ -67,7 +69,6 @@ class PendonorService {
         .update({'status_golongan_darah': statusGoldar})
         .eq('id_pengguna', idMahasiswa);
 
-    // Kirim notifikasi ke Inbox Mahasiswa
     await supabase.from('notifikasi_inbox').insert({
       'id_penerima': idMahasiswa,
       'judul': 'Status Verifikasi Akun: $statusAkun',
@@ -104,7 +105,7 @@ class PendonorService {
     await AuthService.fetchCurrentUserProfile(idPengguna);
   }
 
-  /// Update profil & golongan darah (mengembalikan status goldar ke Belum terverifikasi jika berubah - FR-F1-13)
+  /// Update profil, nomor WhatsApp aktif & golongan darah
   static Future<void> updateProfilPendonor({
     required String idPengguna,
     required String golonganDarahBaru,
@@ -112,9 +113,14 @@ class PendonorService {
     required String golonganDarahLama,
     required String rhesusLama,
     required String statusGoldarSaatIni,
+    String? noWhatsappBaru,
     String? domisili,
   }) async {
     final isGoldarBerubah = golonganDarahBaru != golonganDarahLama || rhesusBaru != rhesusLama;
+
+    if (noWhatsappBaru != null && noWhatsappBaru.trim().isNotEmpty) {
+      await supabase.from('pengguna').update({'no_whatsapp': noWhatsappBaru.trim()}).eq('id_pengguna', idPengguna);
+    }
 
     await supabase
         .from('profil_pendonor')
@@ -129,20 +135,42 @@ class PendonorService {
     await AuthService.fetchCurrentUserProfile(idPengguna);
   }
 
+  /// Mahasiswa mengunggah bukti donor mandiri (UDD PMI / luar kampus)
+  static Future<void> ajukanBuktiDonorMandiri({
+    required String idPengguna,
+    required DateTime tanggalDonor,
+    required String lokasiDonor,
+    required Uint8List fileBytes,
+    required String fileName,
+  }) async {
+    final cleanName = fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+    final storagePath = 'bukti-donor/$idPengguna/${DateTime.now().millisecondsSinceEpoch}_$cleanName';
+
+    await supabase.storage.from('dokumen-bukti').uploadBinary(storagePath, fileBytes);
+
+    await supabase.rpc(
+      'ajukan_bukti_donor_mandiri',
+      params: {
+        'p_tanggal_donor': tanggalDonor.toIso8601String().split('T').first,
+        'p_lokasi_donor': lokasiDonor.trim(),
+        'p_lokasi_berkas': storagePath,
+      },
+    );
+  }
+
   /// Admin mencatat hasil donor pasca-pelaksanaan di UDD PMI (F6)
   static Future<void> catatHasilDonor({
     required String idPendonor,
     required String adminId,
     required DateTime tanggalDonor,
-    required String sumber, // 'Permintaan' atau 'Kegiatan'
+    required String sumber,
     String? idPermintaan,
     String? idKegiatan,
-    required String statusHasil, // Berhasil donor, Tidak lolos pemeriksaan petugas, Tidak hadir
+    required String statusHasil,
     int jedaHari = 61,
   }) async {
     final tglStr = tanggalDonor.toIso8601String().split('T').first;
 
-    // 1. Simpan riwayat donor (tanpa data medis Hb/tensi)
     await supabase.from('riwayat_donor').insert({
       'id_pengguna': idPendonor,
       'sumber': sumber,
@@ -154,7 +182,6 @@ class PendonorService {
       'dicatat_oleh': adminId,
     });
 
-    // 2. Hanya jika "Berhasil donor", perbarui tanggal_donor_terakhir & kirim info jeda
     if (statusHasil == AppStatus.hasilBerhasil) {
       await supabase.from('profil_pendonor').update({'tanggal_donor_terakhir': tglStr}).eq('id_pengguna', idPendonor);
 

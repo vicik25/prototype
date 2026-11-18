@@ -1,9 +1,12 @@
-import 'dart:core';
+import 'dart:async';
 
 import '../core/constants/app_status.dart';
 import '../main.dart';
 import '../models/kegiatan_model.dart';
 import 'pendonor_service.dart';
+
+typedef StringMap = Map<String, String>;
+typedef DynamicMap = Map<String, dynamic>;
 
 class KegiatanService {
   /// Ambil kegiatan berstatus "Disetujui" untuk Beranda publik & Mahasiswa
@@ -39,15 +42,81 @@ class KegiatanService {
     required String idPengaju,
     bool langsungDisetujui = false,
   }) async {
-    await supabase.from('kegiatan').insert({
-      'nama': nama.trim(),
-      'tanggal': tanggal.toIso8601String().split('T').first,
-      'lokasi': lokasi.trim(),
-      'kuota': kuota,
-      'kontak': kontak.trim(),
-      'id_pengaju': idPengaju,
-      'status': langsungDisetujui ? AppStatus.kegiatanDisetujui : AppStatus.kegiatanMenunggu,
-    });
+    final inserted = await supabase
+        .from('kegiatan')
+        .insert({
+          'nama': nama.trim(),
+          'tanggal': tanggal.toIso8601String().split('T').first,
+          'lokasi': lokasi.trim(),
+          'kuota': kuota,
+          'kontak': kontak.trim(),
+          'id_pengaju': idPengaju,
+          'status': langsungDisetujui ? AppStatus.kegiatanDisetujui : AppStatus.kegiatanMenunggu,
+        })
+        .select('id_kegiatan')
+        .single();
+
+    if (!langsungDisetujui) {
+      final admins = await supabase.from('pengguna').select('id_pengguna').eq('peran', AppStatus.roleAdmin);
+
+      for (final admin in (admins as List)) {
+        await supabase.from('notifikasi_inbox').insert({
+          'id_penerima': admin['id_pengguna'],
+          'judul': 'Pengajuan Kegiatan Donor Baru',
+          'pesan': 'Kegiatan "${nama.trim()}" di ${lokasi.trim()} menunggu persetujuan Admin KSR.',
+          'tipe': 'kegiatan',
+          'referensi_id': inserted['id_kegiatan'],
+        });
+      }
+    }
+  }
+
+  /// Penyelenggara memperbarui ajuan kegiatan yang berstatus "Perlu revisi" / menunggu
+  static Future<void> revisiKegiatan({
+    required String idKegiatan,
+    required String nama,
+    required DateTime tanggal,
+    required String lokasi,
+    required int kuota,
+    required String kontak,
+  }) async {
+    await supabase
+        .from('kegiatan')
+        .update({
+          'nama': nama.trim(),
+          'tanggal': tanggal.toIso8601String().split('T').first,
+          'lokasi': lokasi.trim(),
+          'kuota': kuota,
+          'kontak': kontak.trim(),
+          'status': AppStatus.kegiatanMenunggu,
+        })
+        .eq('id_kegiatan', idKegiatan);
+
+    final admins = await supabase.from('pengguna').select('id_pengguna').eq('peran', AppStatus.roleAdmin);
+
+    for (final admin in (admins as List)) {
+      await supabase.from('notifikasi_inbox').insert({
+        'id_penerima': admin['id_pengguna'],
+        'judul': 'Revisi Kegiatan Diajukan Ulang',
+        'pesan': 'Kegiatan "${nama.trim()}" telah diperbarui oleh penyelenggara dan siap diperiksa kembali.',
+        'tipe': 'kegiatan',
+        'referensi_id': idKegiatan,
+      });
+    }
+  }
+
+  /// Ambil daftar presensi peserta untuk Penyelenggara (tanpa membuka data privasi/kontak)
+  static Future<List<DynamicMap>> getPresensiPenyelenggara(String idKegiatan) async {
+    final res = await supabase.rpc('get_presensi_kegiatan_penyelenggara', params: {'p_id_kegiatan': idKegiatan});
+    return List<DynamicMap>.from(res as List);
+  }
+
+  /// Catat kehadiran peserta hari-H oleh Penyelenggara
+  static Future<void> catatPresensiPenyelenggara({required String idPendaftaran, required String statusHadir}) async {
+    await supabase.rpc(
+      'catat_presensi_penyelenggara',
+      params: {'p_id_pendaftaran': idPendaftaran, 'p_status_hadir': statusHadir},
+    );
   }
 
   /// Admin memverifikasi ajuan kegiatan (Disetujui / Perlu revisi / Ditolak)
@@ -62,7 +131,6 @@ class KegiatanService {
         .update({'status': statusBaru, 'catatan_verifikasi': catatan, 'diverifikasi_oleh': adminId})
         .eq('id_kegiatan', kegiatan.idKegiatan);
 
-    // Beri tahu Penyelenggara lewat Inbox
     await supabase.from('notifikasi_inbox').insert({
       'id_penerima': kegiatan.idPengaju,
       'judul': 'Status Kegiatan "${kegiatan.nama}": $statusBaru',
@@ -137,9 +205,9 @@ class KegiatanService {
   }
 
   /// Ambil Parameter Sistem Dinamis (Tabel 3.39)
-  static Future<Map<String, String>> getAllParameter() async {
+  static Future<StringMap> getAllParameter() async {
     final res = await supabase.from('parameter').select();
-    final Map<String, String> params = {};
+    final StringMap params = {};
     for (final row in (res as List<dynamic>)) {
       params[row['kunci'] as String] = row['nilai'] as String;
     }

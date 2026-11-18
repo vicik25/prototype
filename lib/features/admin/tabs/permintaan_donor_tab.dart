@@ -28,6 +28,7 @@ class _PermintaanDonorTabState extends State<PermintaanDonorTab> {
   List<PermintaanDonorModel> _permintaanList = [];
   Map<String, String> _params = {};
   bool _isLoading = true;
+  String _filterStatus = 'Semua';
 
   @override
   void initState() {
@@ -106,6 +107,7 @@ class _PermintaanDonorTabState extends State<PermintaanDonorTab> {
                         Expanded(
                           child: DropdownButtonFormField<String>(
                             initialValue: goldar,
+                            isExpanded: true,
                             decoration: const InputDecoration(labelText: 'Golongan Darah *'),
                             items: [
                               'A',
@@ -120,6 +122,7 @@ class _PermintaanDonorTabState extends State<PermintaanDonorTab> {
                         Expanded(
                           child: DropdownButtonFormField<String>(
                             initialValue: rhesus,
+                            isExpanded: true,
                             decoration: const InputDecoration(labelText: 'Rhesus *'),
                             items: [
                               'Positif',
@@ -148,7 +151,9 @@ class _PermintaanDonorTabState extends State<PermintaanDonorTab> {
                           firstDate: DateTime.now(),
                           lastDate: DateTime.now().add(const Duration(days: 60)),
                         );
-                        if (picked != null) setDialogState(() => batasKebutuhan = picked);
+                        if (picked != null) {
+                          setDialogState(() => batasKebutuhan = picked);
+                        }
                       },
                       child: InputDecorator(
                         decoration: const InputDecoration(
@@ -245,13 +250,17 @@ class _PermintaanDonorTabState extends State<PermintaanDonorTab> {
         ? 1
         : (undanganList.map((e) => e.gelombang).reduce((a, b) => a > b ? a : b) + 1);
 
+    final jumlahBersedia = undanganList.where((u) => u.tanggapan == AppStatus.tanggapanBersedia).length;
+    final jumlahMenunggu = undanganList.where((u) => u.tanggapan == 'Menunggu tanggapan').length;
+    final jumlahMenolak = undanganList.length - jumlahBersedia - jumlahMenunggu;
+
     await showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => Dialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 680, maxHeight: 740),
+            constraints: const BoxConstraints(maxWidth: 700, maxHeight: 760),
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: Column(
@@ -273,6 +282,54 @@ class _PermintaanDonorTabState extends State<PermintaanDonorTab> {
                     style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
                   ),
                   const SizedBox(height: 12),
+
+                  // Ringkasan Progres Gelombang untuk Eskalasi Cepat
+                  if (undanganList.isNotEmpty) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.neutralBg,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Wrap(
+                        spacing: 16,
+                        runSpacing: 6,
+                        children: [
+                          Text(
+                            'Total Diundang: ${undanganList.length} (${gelombangBerikutnya - 1} Gelombang)',
+                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
+                          ),
+                          Text(
+                            'Bersedia: $jumlahBersedia',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12.5,
+                              color: AppColors.success,
+                            ),
+                          ),
+                          Text(
+                            'Menunggu Respons: $jumlahMenunggu',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12.5,
+                              color: AppColors.warning,
+                            ),
+                          ),
+                          Text(
+                            'Tidak Bersedia/Tunda: $jumlahMenolak',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12.5,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
 
                   // Langkah 1: Verifikasi Pemohon jika masih menunggu
                   if (minta.status == AppStatus.mintaMenungguVerifikasi)
@@ -383,12 +440,30 @@ class _PermintaanDonorTabState extends State<PermintaanDonorTab> {
 
                           const Divider(height: 28),
 
-                          // Pencocokan Kandidat Baru (jika status masih aktif)
+                          // Pencocokan Kandidat Baru / Eskalasi Gelombang Berikutnya
                           if (minta.status == AppStatus.mintaMencari ||
                               minta.status == AppStatus.mintaPendonorBersedia) ...[
-                            Text(
-                              'Kandidat Cocok Siap Diundang (${hasilCocok.kandidatSiap.length} tersedia, maks. $maxGelombang/gelombang):',
-                              style: const TextStyle(fontWeight: FontWeight.w700),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Kandidat Gelombang $gelombangBerikutnya (${hasilCocok.kandidatSiap.length} tersedia, maks. $maxGelombang/gelombang):',
+                                    style: const TextStyle(fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                                if (hasilCocok.kandidatSiap.isNotEmpty)
+                                  TextButton(
+                                    onPressed: () {
+                                      setDialogState(() {
+                                        terpilihIds
+                                          ..clear()
+                                          ..addAll(hasilCocok.kandidatSiap.take(maxGelombang).map((e) => e.idPengguna));
+                                      });
+                                    },
+                                    child: Text('Pilih $maxGelombang Teratas'),
+                                  ),
+                              ],
                             ),
                             const SizedBox(height: 8),
                             if (hasilCocok.kandidatSiap.isEmpty)
@@ -458,7 +533,7 @@ class _PermintaanDonorTabState extends State<PermintaanDonorTab> {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                    'Gelombang ke-$gelombangBerikutnya berhasil dikirim ke ${kandidat.length} pendonor (Inbox & WhatsApp).',
+                                    'Gelombang ke-$gelombangBerikutnya berhasil dikirim ke ${kandidat.length} pendonor (Inbox & Push Notif HP).',
                                   ),
                                   backgroundColor: AppColors.success,
                                 ),
@@ -487,6 +562,16 @@ class _PermintaanDonorTabState extends State<PermintaanDonorTab> {
       );
     }
 
+    final filteredList = _permintaanList.where((m) {
+      if (_filterStatus == 'Semua') return true;
+      if (_filterStatus == 'Aktif') {
+        return m.status == AppStatus.mintaMenungguVerifikasi ||
+            m.status == AppStatus.mintaMencari ||
+            m.status == AppStatus.mintaPendonorBersedia;
+      }
+      return m.status == _filterStatus;
+    }).toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -513,17 +598,32 @@ class _PermintaanDonorTabState extends State<PermintaanDonorTab> {
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
 
-        if (_permintaanList.isEmpty)
+        // Filter Status Permintaan
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: ['Semua', 'Aktif', AppStatus.mintaTerlaksana, AppStatus.mintaDitutup].map((st) {
+            final selected = _filterStatus == st;
+            return ChoiceChip(
+              label: Text(st),
+              selected: selected,
+              onSelected: (_) => setState(() => _filterStatus = st),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 14),
+
+        if (filteredList.isEmpty)
           const Card(
             child: Padding(
               padding: EdgeInsets.all(28),
-              child: Center(child: Text('Belum ada permintaan donor darah yang dicatat.')),
+              child: Center(child: Text('Tidak ada permintaan donor darah pada filter ini.')),
             ),
           )
         else
-          ..._permintaanList.map(
+          ...filteredList.map(
             (m) => Card(
               margin: const EdgeInsets.only(bottom: 12),
               child: Padding(

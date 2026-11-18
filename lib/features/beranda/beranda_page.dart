@@ -9,6 +9,7 @@ import '../../main.dart';
 import '../../models/kegiatan_model.dart';
 import '../../services/kegiatan_service.dart';
 import '../auth/login_page.dart';
+import '../pemohon/permintaan_publik_page.dart';
 
 class BerandaPage extends StatefulWidget {
   const BerandaPage({super.key});
@@ -44,6 +45,10 @@ class _BerandaPageState extends State<BerandaPage> {
 
   void _bukaPortalLogin(String role) {
     Navigator.push(context, MaterialPageRoute(builder: (_) => LoginPage(expectedRole: role)));
+  }
+
+  void _bukaLayananPemohon(int tabIndex) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => PermintaanPublikPage(initialTabIndex: tabIndex)));
   }
 
   @override
@@ -83,12 +88,19 @@ class _BerandaPageState extends State<BerandaPage> {
                         ],
                       ),
                       const Spacer(),
-                      if (isDesktop)
+                      if (isDesktop) ...[
+                        OutlinedButton.icon(
+                          onPressed: () => _bukaLayananPemohon(0),
+                          icon: const Icon(Icons.emergency_outlined, size: 18),
+                          label: const Text('Butuh Darah / Lacak'),
+                        ),
+                        const SizedBox(width: 10),
                         ElevatedButton.icon(
                           onPressed: () => _bukaPortalLogin(AppStatus.roleMahasiswa),
                           icon: const Icon(Icons.login_rounded, size: 18),
                           label: const Text('Masuk Portal Mahasiswa'),
                         ),
+                      ],
                     ],
                   ),
                 ),
@@ -149,6 +161,26 @@ class _BerandaPageState extends State<BerandaPage> {
                           'Platform pendataan dan koordinasi cepat pendonor darah sukarela di lingkungan kampus. Pemeriksaan kesehatan, uji silang, dan pengambilan darah tetap dilaksanakan oleh petugas medis UDD PMI.',
                           style: TextStyle(fontSize: 15, height: 1.6, color: AppColors.textSecondary),
                         ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Tombol Layanan Pemohon Darah & Pelacakan Publik
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 10,
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: () => _bukaLayananPemohon(0),
+                            icon: const Icon(Icons.bloodtype_outlined, size: 19),
+                            label: const Text('Ajukan Permintaan Darah'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: () => _bukaLayananPemohon(1),
+                            style: OutlinedButton.styleFrom(backgroundColor: Colors.white),
+                            icon: const Icon(Icons.track_changes_rounded, size: 19),
+                            label: const Text('Lacak Status Permintaan'),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 28),
 

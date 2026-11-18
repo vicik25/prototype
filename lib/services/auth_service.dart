@@ -5,6 +5,7 @@ import 'package:states_rebuilder/states_rebuilder.dart';
 import '../core/constants/app_status.dart';
 import '../main.dart';
 import '../models/pengguna_model.dart';
+import 'push_notification_service.dart';
 
 // Global Reactive State untuk User yang sedang login
 final currentUserRM = RM.inject<PenggunaModel?>(() => null);
@@ -40,6 +41,9 @@ class AuthService {
         'Akses ditolak: Akun ini terdaftar sebagai "${userData.peran}", silakan masuk melalui Portal ${userData.peran}.',
       );
     }
+
+    // Simpan token HP pengguna ke Supabase agar bisa menerima Push Notification
+    await PushNotificationService.simpanTokenKeSupabase(userData.idPengguna);
 
     currentUserRM.state = userData;
     return userData;
@@ -80,14 +84,12 @@ class AuthService {
     Uint8List? kartuDonorBytes,
     String? kartuDonorFileName,
   }) async {
-    // 1. Cek duplikasi NPM sebelum buat akun Auth
     final existingNpm = await supabase.from('pengguna').select('id_pengguna').eq('npm', npm.trim()).maybeSingle();
 
     if (existingNpm != null) {
       throw Exception('NPM sudah terdaftar pada akun lain.');
     }
 
-    // 2. Buat akun di Supabase Auth
     final authRes = await supabase.auth.signUp(email: email.trim(), password: password);
 
     final uid = authRes.user?.id;
@@ -95,7 +97,6 @@ class AuthService {
       throw Exception('Gagal membuat akun autentikasi. Pastikan email belum terdaftar.');
     }
 
-    // 3. Simpan ke tabel pengguna
     await supabase.from('pengguna').insert({
       'id_pengguna': uid,
       'nama_lengkap': namaLengkap.trim(),
@@ -108,7 +109,6 @@ class AuthService {
       'status_akun': AppStatus.akunMenunggu,
     });
 
-    // 4. Simpan ke tabel profil_pendonor
     await supabase.from('profil_pendonor').insert({
       'id_pengguna': uid,
       'golongan_darah': golonganDarah,
@@ -119,19 +119,16 @@ class AuthService {
       'tanggal_donor_terakhir': tanggalDonorTerakhir?.toIso8601String().split('T').first,
     });
 
-    // 5. Catat Persetujuan Eksplisit UU No. 27 Tahun 2022
     await supabase.from('persetujuan').insert({
       'id_pengguna': uid,
       'versi_pemberitahuan': 'v1.0-UUPDP',
       'status': 'Diberikan',
     });
 
-    // 6. Upload Bukti KTP ke Supabase Storage (Lintas Web & Mobile via Bytes)
     final ktpPath = 'ktp/${uid}_${DateTime.now().millisecondsSinceEpoch}_$ktpFileName';
     await supabase.storage.from('dokumen-bukti').uploadBinary(ktpPath, ktpBytes);
     await supabase.from('dokumen_bukti').insert({'jenis': 'KTP', 'id_pengguna': uid, 'lokasi_berkas': ktpPath});
 
-    // 7. Upload Bukti Kartu Donor (jika dilampirkan)
     if (kartuDonorBytes != null && kartuDonorFileName != null) {
       final goldarPath = 'goldar/${uid}_${DateTime.now().millisecondsSinceEpoch}_$kartuDonorFileName';
       await supabase.storage.from('dokumen-bukti').uploadBinary(goldarPath, kartuDonorBytes);
@@ -142,7 +139,6 @@ class AuthService {
       });
     }
 
-    // 8. Beri notifikasi Inbox ke semua Admin bahwa ada pendaftar baru
     final admins = await supabase.from('pengguna').select('id_pengguna').eq('peran', AppStatus.roleAdmin);
 
     for (final admin in admins) {
@@ -165,9 +161,8 @@ class AuthService {
     required String password,
     required String noWhatsapp,
     required String organisasi,
-    required String peran, // Admin atau Penyelenggara
+    required String peran,
   }) async {
-    // Simpan sesi admin saat ini agar tidak ter-replace
     final currentSession = supabase.auth.currentSession;
 
     final authRes = await supabase.auth.signUp(email: email.trim(), password: password);
@@ -186,7 +181,6 @@ class AuthService {
       'status_akun': AppStatus.akunTerverifikasi,
     });
 
-    // Pulihkan sesi Admin utama
     if (currentSession != null) {
       await supabase.auth.setSession(currentSession.refreshToken!);
     }
@@ -211,6 +205,10 @@ class AuthService {
   }
 
   static Future<void> logout() async {
+    final uid = supabase.auth.currentUser?.id;
+    if (uid != null) {
+      await PushNotificationService.hapusTokenDariSupabase(uid);
+    }
     await supabase.auth.signOut();
     currentUserRM.state = null;
   }

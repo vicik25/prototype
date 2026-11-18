@@ -1,10 +1,13 @@
+import 'package:file_picker/file_picker.dart' as fp;
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:states_rebuilder/states_rebuilder.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_status.dart';
 import '../../core/utils/donor_helper.dart';
+import '../../core/utils/file_bytes_helper.dart';
 import '../../core/utils/responsive.dart';
 import '../../core/widgets/custom_app_bar.dart';
 import '../../core/widgets/status_badge.dart';
@@ -95,6 +98,144 @@ class _MahasiswaDashboardState extends State<MahasiswaDashboard> {
     }
   }
 
+  Future<void> _bukaDialogUnggahBuktiMandiri(PenggunaModel user) async {
+    final formKey = GlobalKey<FormState>();
+    final lokasiCtrl = TextEditingController(text: 'UDD PMI Kota Tasikmalaya');
+    DateTime tanggalDonor = DateTime.now();
+    Uint8List? fileBytes;
+    String? fileName;
+    bool submitting = false;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Catat Bukti Donor Mandiri'),
+          content: SizedBox(
+            width: 440,
+            child: Form(
+              key: formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Unggah foto kartu donor atau bukti pelaksanaan donor di UDD PMI / luar agenda kampus agar Admin KSR dapat memperbarui masa jeda 61 hari Anda.',
+                      style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+                    ),
+                    const SizedBox(height: 14),
+                    InkWell(
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: ctx,
+                          initialDate: tanggalDonor,
+                          firstDate: DateTime.now().subtract(const Duration(days: 180)),
+                          lastDate: DateTime.now(),
+                        );
+                        if (picked != null) {
+                          setDialogState(() => tanggalDonor = picked);
+                        }
+                      },
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Tanggal Pelaksanaan Donor *',
+                          suffixIcon: Icon(Icons.calendar_today_outlined),
+                        ),
+                        child: Text(DonorHelper.formatTanggal(tanggalDonor)),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: lokasiCtrl,
+                      decoration: const InputDecoration(labelText: 'Lokasi UDD PMI / Rumah Sakit *'),
+                      validator: (v) => v == null || v.trim().isEmpty ? 'Lokasi donor wajib diisi' : null,
+                    ),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final res = await fp.FilePicker.pickFiles(
+                            type: fp.FileType.custom,
+                            allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+                          );
+                          if (res.isNotEmpty) {
+                            final bytes = await readPlatformFileBytes(res.first);
+                            if (bytes != null) {
+                              setDialogState(() {
+                                fileBytes = bytes;
+                                fileName = res.first.name;
+                              });
+                            }
+                          }
+                        },
+                        icon: Icon(
+                          fileBytes != null ? Icons.check_circle_rounded : Icons.upload_file_rounded,
+                          color: fileBytes != null ? AppColors.success : AppColors.primary,
+                        ),
+                        label: Text(
+                          fileName != null ? 'Terpilih: $fileName' : 'Pilih Foto Bukti Donor (JPG/PNG/PDF) *',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+            ElevatedButton(
+              onPressed: submitting
+                  ? null
+                  : () async {
+                      if (!formKey.currentState!.validate()) return;
+                      if (fileBytes == null || fileName == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Foto bukti donor wajib diunggah.'),
+                            backgroundColor: AppColors.danger,
+                          ),
+                        );
+                        return;
+                      }
+                      setDialogState(() => submitting = true);
+                      try {
+                        await PendonorService.ajukanBuktiDonorMandiri(
+                          idPengguna: user.idPengguna,
+                          tanggalDonor: tanggalDonor,
+                          lokasiDonor: lokasiCtrl.text,
+                          fileBytes: fileBytes!,
+                          fileName: fileName!,
+                        );
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        await _muatSemuaData();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Bukti donor mandiri berhasil dikirim ke Admin UKM KSR!'),
+                              backgroundColor: AppColors.success,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        setDialogState(() => submitting = false);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Gagal mengunggah bukti: $e'), backgroundColor: AppColors.danger),
+                          );
+                        }
+                      }
+                    },
+              child: const Text('Kirim Bukti'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return OnBuilder<PenggunaModel?>.data(
@@ -108,7 +249,7 @@ class _MahasiswaDashboardState extends State<MahasiswaDashboard> {
         final pages = [
           _buildRingkasanTab(user),
           _buildKegiatanTab(user),
-          _buildRiwayatTab(),
+          _buildRiwayatTab(user),
           _buildProfilPrivasiTab(user),
         ];
 
@@ -201,7 +342,6 @@ class _MahasiswaDashboardState extends State<MahasiswaDashboard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Banner Peringatan Status Akun (jika belum Terverifikasi)
         if (user.statusAkun != AppStatus.akunTerverifikasi)
           Container(
             margin: const EdgeInsets.only(bottom: 16),
@@ -227,7 +367,6 @@ class _MahasiswaDashboardState extends State<MahasiswaDashboard> {
             ),
           ),
 
-        // Kartu Pendonor Digital
         DigitalDonorCard(
           user: user,
           jedaHari: _jedaHari,
@@ -244,7 +383,6 @@ class _MahasiswaDashboardState extends State<MahasiswaDashboard> {
 
         const SizedBox(height: 20),
 
-        // Kartu Skrining Mandiri
         Card(
           child: Padding(
             padding: const EdgeInsets.all(20),
@@ -294,7 +432,6 @@ class _MahasiswaDashboardState extends State<MahasiswaDashboard> {
 
         const SizedBox(height: 28),
 
-        // Daftar Panggilan Permintaan Donor Masuk
         const Text(
           'Panggilan Permintaan Darah Untuk Anda',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
@@ -502,19 +639,105 @@ class _MahasiswaDashboardState extends State<MahasiswaDashboard> {
   }
 
   // =========================================================================
-  // TAB 3: RIWAYAT DONOR PRIBADI (F6 - Tanpa data medis Hb/Tensi)
+  // TAB 3: RIWAYAT DONOR, KARTU APRESIASI & UNGGAH BUKTI MANDIRI (F6)
   // =========================================================================
-  Widget _buildRiwayatTab() {
+  Widget _buildRiwayatTab(PenggunaModel user) {
+    final berhasilCount = _riwayatList.where((r) => r.status == AppStatus.hasilBerhasil).length;
+    final estimasiNyawa = berhasilCount * 3;
+    final gelarApresiasi = berhasilCount >= 10
+        ? 'Pahlawan Kemanusiaan'
+        : berhasilCount >= 5
+        ? 'Pendonor Teladan'
+        : berhasilCount >= 1
+        ? 'Pendonor Aktif'
+        : 'Calon Pahlawan';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Riwayat Donor Darah Pribadi', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 4),
-        const Text(
-          'Catatan pelaksanaan donor darah lengkap (whole blood) Anda.',
-          style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+        Row(
+          children: [
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Riwayat & Apresiasi Donor', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                  SizedBox(height: 4),
+                  Text(
+                    'Rekap donor darah sukarela dan pencatatan donor mandiri di UDD PMI.',
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            ElevatedButton.icon(
+              onPressed: () => _bukaDialogUnggahBuktiMandiri(user),
+              icon: const Icon(Icons.add_a_photo_outlined, size: 18),
+              label: const Text('Catat Donor Mandiri'),
+            ),
+          ],
         ),
         const SizedBox(height: 16),
+
+        // Kartu Apresiasi Kontribusi Mahasiswa
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [AppColors.primary, AppColors.primaryDark],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(Icons.workspace_premium_rounded, color: Colors.white, size: 34),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.22),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        'Lencana: $gelarApresiasi',
+                        style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '$berhasilCount Kali Berhasil Donor Darah',
+                      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      berhasilCount > 0
+                          ? 'Kontribusi Anda berpotensi menyelamatkan hingga $estimasiNyawa nyawa pasien.'
+                          : 'Mulai aksi donor pertama Anda untuk meraih lencana apresiasi kemanusiaan.',
+                      style: const TextStyle(color: Colors.white70, fontSize: 12.5),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 18),
 
         if (_riwayatList.isEmpty)
           const Card(
@@ -545,10 +768,11 @@ class _MahasiswaDashboardState extends State<MahasiswaDashboard> {
   }
 
   // =========================================================================
-  // TAB 4: PROFIL & PENGATURAN PRIVASI UU PDP (F1 & F9)
+  // TAB 4: PROFIL, KONTAK WHATSAPP & PENGATURAN PRIVASI UU PDP (F1 & F9)
   // =========================================================================
   Widget _buildProfilPrivasiTab(PenggunaModel user) {
     final profil = user.profilPendonor;
+    final waCtrl = TextEditingController(text: user.noWhatsapp ?? '');
     final domisiliCtrl = TextEditingController(text: profil?.domisili ?? '');
     String selectedGoldar = profil?.golonganDarah ?? 'O';
     String selectedRhesus = profil?.rhesus ?? 'Positif';
@@ -567,13 +791,25 @@ class _MahasiswaDashboardState extends State<MahasiswaDashboard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Pembaruan Data Pendonor', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                    const Text(
+                      'Pembaruan Data & Kontak Darurat',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                    ),
                     const SizedBox(height: 4),
                     const Text(
-                      'Perubahan golongan darah atau rhesus akan mengembalikan status golongan darah menjadi "Belum terverifikasi" sampai diperiksa ulang oleh Admin.',
+                      'Pastikan nomor WhatsApp selalu aktif untuk menerima koordinasi panggilan donor darurat. Perubahan golongan darah akan diperiksa ulang oleh Admin.',
                       style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
                     ),
                     const SizedBox(height: 16),
+                    TextFormField(
+                      controller: waCtrl,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(
+                        labelText: 'Nomor WhatsApp Aktif',
+                        prefixIcon: Icon(Icons.phone_android_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
@@ -606,7 +842,10 @@ class _MahasiswaDashboardState extends State<MahasiswaDashboard> {
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: domisiliCtrl,
-                      decoration: const InputDecoration(labelText: 'Domisili Kecamatan / Kota'),
+                      decoration: const InputDecoration(
+                        labelText: 'Domisili Kecamatan / Kota',
+                        prefixIcon: Icon(Icons.location_on_outlined),
+                      ),
                     ),
                     const SizedBox(height: 16),
                     ElevatedButton(
@@ -619,12 +858,13 @@ class _MahasiswaDashboardState extends State<MahasiswaDashboard> {
                           golonganDarahLama: profil.golonganDarah,
                           rhesusLama: profil.rhesus,
                           statusGoldarSaatIni: profil.statusGolonganDarah,
+                          noWhatsappBaru: waCtrl.text.trim(),
                           domisili: domisiliCtrl.text.trim(),
                         );
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('Profil pendonor berhasil diperbarui.'),
+                              content: Text('Profil dan nomor WhatsApp berhasil diperbarui.'),
                               backgroundColor: AppColors.success,
                             ),
                           );
@@ -639,7 +879,6 @@ class _MahasiswaDashboardState extends State<MahasiswaDashboard> {
 
             const SizedBox(height: 20),
 
-            // Hak Subjek Data Pribadi (UU No. 27 Tahun 2022 - BR-10)
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(20),

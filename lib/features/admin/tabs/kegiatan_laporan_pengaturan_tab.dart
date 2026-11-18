@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/constants/app_colors.dart';
@@ -60,6 +61,136 @@ class _KegiatanLaporanPengaturanTabState extends State<KegiatanLaporanPengaturan
     }
   }
 
+  /// Susun CSV Laporan Pendonor untuk Excel / Google Sheets
+  String _generateCsvPendonor() {
+    final buffer = StringBuffer();
+    buffer.writeln(
+      'No;Nama Lengkap;NPM;Program Studi;Golongan Darah;Rhesus;Status Goldar;Status Akun;Ketersediaan;Status Jeda;No WhatsApp;Email',
+    );
+
+    for (var i = 0; i < _pendonorList.length; i++) {
+      final m = _pendonorList[i];
+      final p = m.profilPendonor;
+      final bisaDonor = DonorHelper.isBisaDonor(p?.tanggalDonorTerakhir);
+      final statusJeda = bisaDonor ? AppStatus.jedaBisaDonor : AppStatus.jedaBelumBisa;
+
+      buffer.writeln(
+        '${i + 1};'
+        '"${m.namaLengkap}";'
+        '"${m.npm ?? '-'}";'
+        '"${m.programStudi ?? '-'}";'
+        '"${p?.golonganDarah ?? '-'}";'
+        '"${p?.rhesus ?? '-'}";'
+        '"${p?.statusGolonganDarah ?? '-'}";'
+        '"${m.statusAkun}";'
+        '"${p?.ketersediaan ?? '-'}";'
+        '"$statusJeda";'
+        '"${m.noWhatsapp ?? '-'}";'
+        '"${m.email}"',
+      );
+    }
+    return buffer.toString();
+  }
+
+  /// Susun CSV Laporan Permintaan Darah & Kegiatan Kampus
+  String _generateCsvPermintaanDanKegiatan() {
+    final buffer = StringBuffer();
+    buffer.writeln('=== REKAP PERMINTAAN DARAH ===');
+    buffer.writeln('No;Rumah Sakit;Pemohon;Kontak Pemohon;Golongan Darah;Jumlah Kantong;Batas Kebutuhan;Status');
+
+    for (var i = 0; i < _permintaanList.length; i++) {
+      final m = _permintaanList[i];
+      final tgl = DateFormat('yyyy-MM-dd').format(m.batasWaktuKebutuhan);
+      buffer.writeln(
+        '${i + 1};'
+        '"${m.rumahSakit}";'
+        '"${m.namaPemohon}";'
+        '"${m.kontakPemohon}";'
+        '"${m.goldarLengkap}";'
+        '${m.jumlahKantong};'
+        '"$tgl";'
+        '"${m.status}"',
+      );
+    }
+
+    buffer.writeln('');
+    buffer.writeln('=== REKAP KEGIATAN DONOR KAMPUS ===');
+    buffer.writeln('No;Nama Kegiatan;Tanggal;Lokasi;Pendaftar;Kuota;Status');
+
+    for (var i = 0; i < _kegiatanList.length; i++) {
+      final k = _kegiatanList[i];
+      final tgl = DateFormat('yyyy-MM-dd').format(k.tanggal);
+      buffer.writeln(
+        '${i + 1};'
+        '"${k.nama}";'
+        '"$tgl";'
+        '"${k.lokasi}";'
+        '${k.jumlahPendaftar};'
+        '${k.kuota};'
+        '"${k.status}"',
+      );
+    }
+
+    return buffer.toString();
+  }
+
+  Future<void> _bukaModalEksporLaporan({required String judul, required String csvContent}) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(judul),
+        content: SizedBox(
+          width: 620,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Format CSV (pemisah titik koma ";") siap ditempel langsung ke Microsoft Excel atau Google Sheets untuk keperluan LPJ UKM KSR:',
+                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                height: 260,
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.neutralBg,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: SingleChildScrollView(
+                  child: SelectableText(csvContent, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Tutup')),
+          ElevatedButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: csvContent));
+              if (ctx.mounted) Navigator.pop(ctx);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Data laporan CSV berhasil disalin! Silakan tempel (Ctrl+V) di Excel atau Google Sheets.',
+                    ),
+                    backgroundColor: AppColors.success,
+                  ),
+                );
+              }
+            },
+            icon: const Icon(Icons.copy_all_rounded, size: 18),
+            label: const Text('Salin CSV untuk Excel'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _bukaVerifikasiKegiatan(KegiatanModel keg) async {
     String status = AppStatus.kegiatanDisetujui;
     final catatanCtrl = TextEditingController(text: keg.catatanVerifikasi ?? '');
@@ -80,6 +211,7 @@ class _KegiatanLaporanPengaturanTabState extends State<KegiatanLaporanPengaturan
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   initialValue: status,
+                  isExpanded: true,
                   decoration: const InputDecoration(labelText: 'Keputusan Admin'),
                   items: [
                     AppStatus.kegiatanDisetujui,
@@ -199,6 +331,7 @@ class _KegiatanLaporanPengaturanTabState extends State<KegiatanLaporanPengaturan
                 children: [
                   DropdownButtonFormField<String>(
                     initialValue: peran,
+                    isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Peran Akun'),
                     items: [
                       AppStatus.rolePenyelenggara,
@@ -271,23 +404,186 @@ class _KegiatanLaporanPengaturanTabState extends State<KegiatanLaporanPengaturan
       );
     }
 
-    final terverifikasiCount = _pendonorList.where((m) => m.statusAkun == AppStatus.akunTerverifikasi).length;
+    final terverifikasiList = _pendonorList.where((m) => m.statusAkun == AppStatus.akunTerverifikasi).toList();
+    final siapDonorList = terverifikasiList.where((m) {
+      final p = m.profilPendonor;
+      if (p == null) return false;
+      return p.ketersediaan == AppStatus.tersediaAktif && DonorHelper.isBisaDonor(p.tanggalDonorTerakhir);
+    }).toList();
+
     final terlaksanaCount = _permintaanList.where((p) => p.status == AppStatus.mintaTerlaksana).length;
+
+    // Hitung sebaran per golongan darah (total terverifikasi vs siap donor hari ini)
+    const daftarGoldar = ['A', 'B', 'AB', 'O'];
+
+    // Hitung sebaran per Program Studi (top 5)
+    final Map<String, int> prodiCounts = {};
+    for (final m in terverifikasiList) {
+      final prodi = (m.programStudi == null || m.programStudi!.trim().isEmpty) ? 'Belum diisi' : m.programStudi!.trim();
+      prodiCounts[prodi] = (prodiCounts[prodi] ?? 0) + 1;
+    }
+    final sortedProdi = prodiCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 1. Rekap Laporan Agregat (F8)
-        const Text('Ringkasan Laporan Agregat', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 12),
+        // 1. Rekap Laporan Agregat & Ekspor CSV (F8)
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Ringkasan Laporan & Ekspor LPJ', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                  SizedBox(height: 4),
+                  Text(
+                    'Pantau kesiapan stok pendonor kampus dan salin laporan format CSV untuk Excel/LPJ UKM KSR.',
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () =>
+                      _bukaModalEksporLaporan(judul: 'Ekspor Data Pendonor (CSV)', csvContent: _generateCsvPendonor()),
+                  icon: const Icon(Icons.people_alt_outlined, size: 18),
+                  label: const Text('Ekspor Pendonor'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () => _bukaModalEksporLaporan(
+                    judul: 'Ekspor Permintaan & Kegiatan (CSV)',
+                    csvContent: _generateCsvPermintaanDanKegiatan(),
+                  ),
+                  icon: const Icon(Icons.file_download_outlined, size: 18),
+                  label: const Text('Ekspor Permintaan & Kegiatan'),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
         Wrap(
           spacing: 14,
           runSpacing: 14,
           children: [
-            _MetricCard(label: 'Pendonor Terverifikasi', value: '$terverifikasiCount Orang', color: AppColors.success),
-            _MetricCard(label: 'Permintaan Terlaksana', value: '$terlaksanaCount Kasus', color: AppColors.primary),
-            _MetricCard(label: 'Total Kegiatan Kampus', value: '${_kegiatanList.length} Agenda', color: Colors.blue),
+            _MetricCard(
+              label: 'Pendonor Terverifikasi',
+              value: '${terverifikasiList.length} Orang',
+              subtitle: '${siapDonorList.length} siap donor hari ini',
+              color: AppColors.success,
+            ),
+            _MetricCard(
+              label: 'Permintaan Terlaksana',
+              value: '$terlaksanaCount / ${_permintaanList.length} Kasus',
+              subtitle: 'Kebutuhan darah terpenuhi',
+              color: AppColors.primary,
+            ),
+            _MetricCard(
+              label: 'Total Kegiatan Kampus',
+              value: '${_kegiatanList.length} Agenda',
+              subtitle: 'Kolaborasi organisasi kampus',
+              color: Colors.blue,
+            ),
           ],
+        ),
+
+        const SizedBox(height: 18),
+
+        // Kartu Distribusi Stok per Golongan Darah & Program Studi
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Kesiapan Pendonor Terverifikasi per Golongan Darah',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: daftarGoldar.map((g) {
+                    final totalG = terverifikasiList.where((m) => m.profilPendonor?.golonganDarah == g).length;
+                    final siapG = siapDonorList.where((m) => m.profilPendonor?.golonganDarah == g).length;
+                    final rhesusNeg = siapDonorList
+                        .where((m) => m.profilPendonor?.golonganDarah == g && m.profilPendonor?.rhesus == 'Negatif')
+                        .length;
+
+                    return Container(
+                      width: 195,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppColors.neutralBg,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Golongan $g',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.primary,
+                                  fontSize: 15,
+                                ),
+                              ),
+                              Text(
+                                '$siapG Siap',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.success,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Total terdaftar: $totalG orang${rhesusNeg > 0 ? ' ($rhesusNeg Rh-)' : ''}',
+                            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+                if (sortedProdi.isNotEmpty) ...[
+                  const Divider(height: 24),
+                  const Text(
+                    'Sebaran Pendonor per Program Studi:',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: sortedProdi.take(6).map((entry) {
+                      return Chip(
+                        backgroundColor: AppColors.primaryLight,
+                        label: Text(
+                          '${entry.key}: ${entry.value} pendonor',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primary),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
 
         const SizedBox(height: 28),
@@ -421,14 +717,15 @@ class _KegiatanLaporanPengaturanTabState extends State<KegiatanLaporanPengaturan
 class _MetricCard extends StatelessWidget {
   final String label;
   final String value;
+  final String subtitle;
   final Color color;
 
-  const _MetricCard({required this.label, required this.value, required this.color});
+  const _MetricCard({required this.label, required this.value, required this.subtitle, required this.color});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 240,
+      width: 250,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -444,6 +741,8 @@ class _MetricCard extends StatelessWidget {
             value,
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: color),
           ),
+          const SizedBox(height: 4),
+          Text(subtitle, style: const TextStyle(fontSize: 11.5, color: AppColors.textSecondary)),
         ],
       ),
     );
