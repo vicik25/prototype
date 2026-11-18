@@ -56,26 +56,50 @@ class _RegisterMahasiswaPageState extends State<RegisterMahasiswaPage> {
   }
 
   Future<void> _pilihFile({required bool isKtp}) async {
-    final result = await fp.FilePicker.pickFiles(
-      type: fp.FileType.custom,
-      allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
-    );
+    try {
+      final result = await fp.FilePicker.pickFiles(
+        type: fp.FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+      );
 
-    if (result.isNotEmpty) {
+      if (result.isEmpty) return;
+
       final file = result.first;
       final bytes = await readPlatformFileBytes(file);
 
-      if (bytes != null) {
-        setState(() {
-          if (isKtp) {
-            _ktpBytes = bytes;
-            _ktpName = file.name;
-          } else {
-            _kartuDonorBytes = bytes;
-            _kartuDonorName = file.name;
-          }
-        });
+      if (bytes == null || bytes.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Gagal membaca isi berkas. Pastikan format JPG, PNG, atau PDF valid.'),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+        return;
       }
+
+      setState(() {
+        if (isKtp) {
+          _ktpBytes = bytes;
+          _ktpName = file.name;
+        } else {
+          _kartuDonorBytes = bytes;
+          _kartuDonorName = file.name;
+        }
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Berkas "${file.name}" berhasil dipilih.'),
+          backgroundColor: AppColors.success,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Gagal memilih berkas: $e'), backgroundColor: AppColors.danger));
     }
   }
 
@@ -344,27 +368,33 @@ class _RegisterMahasiswaPageState extends State<RegisterMahasiswaPage> {
                         style: TextStyle(fontWeight: FontWeight.w700),
                       ),
                       const SizedBox(height: 8),
-                      OutlinedButton.icon(
-                        onPressed: () => _pilihFile(isKtp: true),
-                        icon: Icon(
-                          _ktpBytes != null ? Icons.check_circle : Icons.upload_file_rounded,
-                          color: _ktpBytes != null ? AppColors.success : AppColors.primary,
-                        ),
-                        label: Text(
-                          _ktpName != null ? 'KTP/KTM Terpilih: $_ktpName' : 'Unggah Bukti Identitas (KTP / KTM) *',
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _pilihFile(isKtp: true),
+                          icon: Icon(
+                            _ktpBytes != null ? Icons.check_circle : Icons.upload_file_rounded,
+                            color: _ktpBytes != null ? AppColors.success : AppColors.primary,
+                          ),
+                          label: Text(
+                            _ktpName != null ? 'KTP/KTM Terpilih: $_ktpName' : 'Unggah Bukti Identitas (KTP / KTM) *',
+                          ),
                         ),
                       ),
                       const SizedBox(height: 8),
-                      OutlinedButton.icon(
-                        onPressed: () => _pilihFile(isKtp: false),
-                        icon: Icon(
-                          _kartuDonorBytes != null ? Icons.check_circle : Icons.badge_outlined,
-                          color: _kartuDonorBytes != null ? AppColors.success : AppColors.neutral,
-                        ),
-                        label: Text(
-                          _kartuDonorName != null
-                              ? 'Kartu Donor Terpilih: $_kartuDonorName'
-                              : 'Unggah Kartu Donor / Bukti Golongan Darah (Opsional)',
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _pilihFile(isKtp: false),
+                          icon: Icon(
+                            _kartuDonorBytes != null ? Icons.check_circle : Icons.badge_outlined,
+                            color: _kartuDonorBytes != null ? AppColors.success : AppColors.neutral,
+                          ),
+                          label: Text(
+                            _kartuDonorName != null
+                                ? 'Kartu Donor Terpilih: $_kartuDonorName'
+                                : 'Unggah Kartu Donor / Bukti Golongan Darah (Opsional)',
+                          ),
                         ),
                       ),
 
